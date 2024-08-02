@@ -1,0 +1,7 @@
+{% extends "referrals/base.html" %}
+
+{% block content %}
+<h2>Prediction Result</h2>
+<p>User interest level: {{ interested }}</p>
+<a href="{% url 'predict_interest_form' %}">Predict another</a>
+{% endblock %}

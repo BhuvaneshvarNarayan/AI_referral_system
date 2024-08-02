@@ -1,0 +1,61 @@
+{% extends "referrals/base.html" %}
+
+{% block content %}
+<h2>Predict Interest</h2>
+<form id="predict-form" method="POST">
+    {% csrf_token %}
+    <label for="LeadID">LeadID:</label>
+    <input type="number" id="LeadID" name="LeadID" required><br>
+    <label for="Age">Age:</label>
+    <input type="number" id="Age" name="Age" required><br>
+    <label for="Gender">Gender:</label>
+    <input type="text" id="Gender" name="Gender" required><br>
+    <label for="Location">Location:</label>
+    <input type="text" id="Location" name="Location" required><br>
+    <label for="LeadSource">LeadSource:</label>
+    <input type="text" id="LeadSource" name="LeadSource" required><br>
+    <label for="TimeSpent">TimeSpent (minutes):</label>
+    <input type="number" id="TimeSpent" name="TimeSpent (minutes)" required><br>
+    <label for="PagesViewed">PagesViewed:</label>
+    <input type="number" id="PagesViewed" name="PagesViewed" required><br>
+    <label for="EmailSent">EmailSent:</label>
+    <input type="number" id="EmailSent" name="EmailSent" required><br>
+    <label for="DeviceType">DeviceType:</label>
+    <input type="text" id="DeviceType" name="DeviceType" required><br>
+    <label for="ReferralSource">ReferralSource:</label>
+    <input type="text" id="ReferralSource" name="ReferralSource" required><br>
+    <label for="FormSubmissions">FormSubmissions:</label>
+    <input type="number" id="FormSubmissions" name="FormSubmissions" required><br>
+    <label for="Downloads">Downloads:</label>
+    <input type="number" id="Downloads" name="Downloads" required><br>
+    <label for="CTR_ProductPage">CTR_ProductPage:</label>
+    <input type="number" step="0.01" id="CTR_ProductPage" name="CTR_ProductPage" required><br>
+    <label for="ResponseTime">ResponseTime (hours):</label>
+    <input type="number" id="ResponseTime" name="ResponseTime (hours)" required><br>
+    <label for="FollowUpEmails">FollowUpEmails:</label>
+    <input type="number" id="FollowUpEmails" name="FollowUpEmails" required><br>
+    <label for="SocialMediaEngagement">SocialMediaEngagement:</label>
+    <input type="number" id="SocialMediaEngagement" name="SocialMediaEngagement" required><br>
+    <label for="PaymentHistory">PaymentHistory:</label>
+    <input type="number" id="PaymentHistory" name="PaymentHistory" required><br>
+    <button type="submit">Predict</button>
+</form>
+<script>
+document.getElementById('predict-form').addEventListener('submit', async function(event) {
+    event.preventDefault();
+    const form = event.target;
+    const formData = new FormData(form);
+    const data = Object.fromEntries(formData.entries());
+    const response = await fetch(form.action, {
+        method: form.method,
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': formData.get('csrfmiddlewaretoken')
+        },
+        body: JSON.stringify(data)
+    });
+    const result = await response.json();
+    window.location.href = `/referrals/predict_interest_result?interested=${result.interested}`;
+});
+</script>
+{% endblock %}
