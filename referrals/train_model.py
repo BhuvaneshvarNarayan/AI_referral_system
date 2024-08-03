@@ -56,7 +56,7 @@ def train_model(X, y, columns, scaler):
     joblib.dump(scaler, 'scaler.joblib')
 
 
-file_path = '/Users/bhuvaneshvarnarayan/Documents/GitHub/referral_system/data/customer_conversion_traing_dataset.csv'
+file_path = '/Users/bhuvaneshvarnarayan/Documents/GitHub/referral_system/data/customer_conversion_training_dataset.csv'
 df = load_data(file_path)
 try:
     X, y, scaler, columns = preprocess_data(df)
