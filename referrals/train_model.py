@@ -1,21 +1,19 @@
 import pandas as pd
-from sklearn.model_selection import train_test_split
+from sklearn.model_selection import train_test_split, GridSearchCV
 from sklearn.linear_model import LogisticRegression
-from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
+from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier, VotingClassifier
 from xgboost import XGBClassifier
 from lightgbm import LGBMClassifier
-from sklearn.metrics import accuracy_score
+from sklearn.metrics import accuracy_score, classification_report
 from sklearn.preprocessing import StandardScaler, PolynomialFeatures
-from sklearn.model_selection import GridSearchCV
+from sklearn.utils import resample
+from imblearn.over_sampling import SMOTE
 import joblib
-import os
-
 
 def load_data(file_path):
     df = pd.read_csv(file_path)
     df = df.dropna()  # Drop rows with missing values
     return df
-
 
 def preprocess_data(df):
     if 'LeadStatus' not in df.columns:
@@ -44,6 +42,10 @@ def preprocess_data(df):
     # Encode categorical variables
     X = pd.get_dummies(X, drop_first=True)
 
+    # Use SMOTE to handle class imbalance
+    smote = SMOTE(random_state=42)
+    X, y = smote.fit_resample(X, y)
+
     # Save column names before scaling
     columns = X.columns
 
@@ -57,83 +59,82 @@ def preprocess_data(df):
 
     return X_scaled, y, scaler, poly, columns
 
-
 def train_model(X, y, scaler, poly, columns):
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
 
-    # Logistic Regression with Hyperparameter Tuning
+    # Define models
+    log_reg = LogisticRegression(max_iter=1000)
+    rf = RandomForestClassifier(random_state=42)
+    gb = GradientBoostingClassifier(random_state=42)
+    xgb = XGBClassifier(random_state=42, use_label_encoder=False, eval_metric='logloss')
+    lgbm = LGBMClassifier(random_state=42)
+
+    # Hyperparameter tuning with GridSearchCV
     param_grid = {
-        'max_iter': [500, 1000],
-        'solver': ['lbfgs', 'liblinear']
+        'log_reg': {
+            'max_iter': [500, 1000],
+            'solver': ['lbfgs', 'liblinear']
+        },
+        'rf': {
+            'n_estimators': [100, 200],
+            'max_features': ['sqrt', 'log2']  # Fixed to valid options
+        },
+        'gb': {
+            'n_estimators': [100, 200],
+            'learning_rate': [0.01, 0.1]
+        },
+        'xgb': {
+            'n_estimators': [100, 200],
+            'learning_rate': [0.01, 0.1]
+        },
+        'lgbm': {
+            'n_estimators': [100, 200],
+            'learning_rate': [0.01, 0.1]
+        }
     }
-    log_reg = LogisticRegression()
-    log_reg_cv = GridSearchCV(log_reg, param_grid, cv=5)
-    log_reg_cv.fit(X_train, y_train)
-    best_log_reg = log_reg_cv.best_estimator_
 
-    # RandomForestClassifier
-    rf = RandomForestClassifier(n_estimators=100, random_state=42)
-    rf.fit(X_train, y_train)
-
-    # GradientBoostingClassifier
-    gb = GradientBoostingClassifier(n_estimators=100, random_state=42)
-    gb.fit(X_train, y_train)
-
-    # XGBClassifier
-    xgb = XGBClassifier(n_estimators=100, random_state=42, use_label_encoder=False, eval_metric='logloss')
-    xgb.fit(X_train, y_train)
-
-    # LGBMClassifier
-    lgbm = LGBMClassifier(n_estimators=100, random_state=42)
-    lgbm.fit(X_train, y_train)
-
-    # Predictions
-    log_reg_predictions = best_log_reg.predict(X_test)
-    rf_predictions = rf.predict(X_test)
-    gb_predictions = gb.predict(X_test)
-    xgb_predictions = xgb.predict(X_test)
-    lgbm_predictions = lgbm.predict(X_test)
-
-    # Accuracies
-    log_reg_accuracy = accuracy_score(y_test, log_reg_predictions)
-    rf_accuracy = accuracy_score(y_test, rf_predictions)
-    gb_accuracy = accuracy_score(y_test, gb_predictions)
-    xgb_accuracy = accuracy_score(y_test, xgb_predictions)
-    lgbm_accuracy = accuracy_score(y_test, lgbm_predictions)
-
-    print(f'Logistic Regression accuracy: {log_reg_accuracy}')
-    print(f'Random Forest accuracy: {rf_accuracy}')
-    print(f'Gradient Boosting accuracy: {gb_accuracy}')
-    print(f'XGBoost accuracy: {xgb_accuracy}')
-    print(f'LightGBM accuracy: {lgbm_accuracy}')
-
-    # Choose the best model
-    accuracies = {
-        'log_reg': log_reg_accuracy,
-        'rf': rf_accuracy,
-        'gb': gb_accuracy,
-        'xgb': xgb_accuracy,
-        'lgbm': lgbm_accuracy
-    }
-    best_model_name = max(accuracies, key=accuracies.get)
-    best_accuracy = accuracies[best_model_name]
-
-    best_model = {
-        'log_reg': best_log_reg,
+    models = {
+        'log_reg': log_reg,
         'rf': rf,
         'gb': gb,
         'xgb': xgb,
         'lgbm': lgbm
-    }[best_model_name]
+    }
 
-    print(f'Best model ({best_model_name}) accuracy: {best_accuracy}')
+    best_estimators = {}
+    for model_name in models.keys():
+        grid_search = GridSearchCV(models[model_name], param_grid[model_name], cv=5, n_jobs=-1)
+        grid_search.fit(X_train, y_train)
+        best_estimators[model_name] = grid_search.best_estimator_
+        print(f"Best parameters for {model_name}: {grid_search.best_params_}")
 
-    # Save the best model to disk
-    joblib.dump(best_model, 'model.joblib')
+    # Ensemble model
+    voting_clf = VotingClassifier(estimators=[
+        ('log_reg', best_estimators['log_reg']),
+        ('rf', best_estimators['rf']),
+        ('gb', best_estimators['gb']),
+        ('xgb', best_estimators['xgb']),
+        ('lgbm', best_estimators['lgbm'])
+    ], voting='soft')
+    voting_clf.fit(X_train, y_train)
+
+    # Evaluate models
+    for model_name, model in best_estimators.items():
+        y_pred = model.predict(X_test)
+        print(f"\nAccuracy for {model_name}: {accuracy_score(y_test, y_pred)}")
+        print(f"Classification report for {model_name}:\n{classification_report(y_test, y_pred)}")
+
+    # Evaluate ensemble model
+    ensemble_pred = voting_clf.predict(X_test)
+    ensemble_accuracy = accuracy_score(y_test, ensemble_pred)
+    print(f"\nEnsemble model accuracy: {ensemble_accuracy}")
+    print(f"Ensemble model classification report:\n{classification_report(y_test, ensemble_pred)}")
+
+    # Save the best ensemble model to disk
+    joblib.dump(voting_clf, 'model.joblib')
     joblib.dump(scaler, 'scaler.joblib')
     joblib.dump(poly, 'poly.joblib')
     joblib.dump(columns, 'model_columns.joblib')
-
 
 file_path = '/Users/bhuvaneshvarnarayan/Documents/GitHub/referral_system/data/customer_conversion_training_dataset.csv'
 df = load_data(file_path)
