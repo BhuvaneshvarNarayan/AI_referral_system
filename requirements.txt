@@ -1,0 +1,6 @@
+Django
+pandas
+joblib
+scikit-learn
+xgboost
+lightgbm
