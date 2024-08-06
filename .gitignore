@@ -8,3 +8,7 @@
 referral_system/__pycache__/
 referrals/__pycache__/
 referrals/migrations/__pycache__/
+referrals/model.joblib
+referrals/model_columns.joblib
+referrals/poly.joblib
+referrals/scaler.joblib
