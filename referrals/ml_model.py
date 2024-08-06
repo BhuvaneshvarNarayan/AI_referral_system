@@ -1,100 +1,68 @@
 import pandas as pd
-import joblib
+from sklearn.linear_model import LogisticRegression
+from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier, VotingClassifier
+from xgboost import XGBClassifier
+from lightgbm import LGBMClassifier
 from sklearn.preprocessing import StandardScaler, PolynomialFeatures
-from imblearn.over_sampling import SMOTE
+from sklearn.impute import SimpleImputer
+import joblib
+import os
 
-from referrals.train_model import train_model
+# Define the path to the model file
+MODEL_PATH = os.path.join(os.path.dirname(__file__), 'model.joblib')
+SCALER_PATH = os.path.join(os.path.dirname(__file__), 'scaler.joblib')
+POLY_PATH = os.path.join(os.path.dirname(__file__), 'poly.joblib')
+COLUMNS_PATH = os.path.join(os.path.dirname(__file__), 'model_columns.joblib')
 
-# Load the model and preprocessing objects
-model = joblib.load('model.joblib')
-scaler = joblib.load('scaler.joblib')
-poly = joblib.load('poly.joblib')
-model_columns = joblib.load('model_columns.joblib')
+# Load the trained models and preprocessing objects
+best_model = joblib.load(MODEL_PATH)
+scaler = joblib.load(SCALER_PATH)
+poly = joblib.load(POLY_PATH)
+model_columns = joblib.load(COLUMNS_PATH)
 
-def load_data(file_path):
-    df = pd.read_csv(file_path)
-    df = df.dropna()  # Drop rows with missing values
-    return df
-
-def preprocess_data(df):
-    if 'LeadStatus' not in df.columns:
-        raise KeyError("Column 'LeadStatus' not found in DataFrame")
-
-    # Convert LeadStatus to binary target variable
-    df['interested'] = df['LeadStatus'].apply(lambda x: 1 if x in ['Warm', 'Hot'] else 0)
-
-    # Select relevant features
-    features = [
-        'Age', 'Gender', 'Location', 'LeadSource', 'TimeSpent (minutes)',
-        'PagesViewed', 'EmailSent', 'DeviceType',
-        'FormSubmissions', 'CTR_ProductPage',
-        'ResponseTime (hours)', 'FollowUpEmails',
-        'SocialMediaEngagement', 'PaymentHistory'
-    ]
-
-    X = df[features]
-    y = df['interested']
-
-    # Check if there are at least two classes
-    if len(set(y)) < 2:
-        raise ValueError(
-            "The data contains only one class. Please ensure the dataset contains both 'Cold' and 'Warm'/'Hot' entries.")
-
-    # Encode categorical variables
-    X = pd.get_dummies(X, drop_first=True)
-
-    # Use SMOTE to handle class imbalance
-    smote = SMOTE(random_state=42)
-    X, y = smote.fit_resample(X, y)
-
-    # Save column names before scaling
-    columns = X.columns
-
-    # Polynomial Features
-    poly = PolynomialFeatures(degree=2, interaction_only=True, include_bias=False)
-    X_poly = poly.fit_transform(X)
-
-    # Scale the features
-    scaler = StandardScaler()
-    X_scaled = scaler.fit_transform(X_poly)
-
-    return X_scaled, y, scaler, poly, columns
 
 def preprocess_input(data):
     # Convert input data to DataFrame
-    input_df = pd.DataFrame([data])
-    print("Input DataFrame before processing:", input_df)
+    X = pd.DataFrame([data])
 
-    # Ensure all required columns are present
+    # Handle missing columns by adding them with default value 0
     for col in model_columns:
-        if col not in input_df.columns:
-            input_df[col] = 0
+        if col not in X.columns:
+            X[col] = 0
 
-    # Ensure the order of columns matches
-    input_df = input_df[model_columns]
-    print("Input DataFrame after matching columns:", input_df)
+    # Ensure the same order of columns as in training
+    X = X[model_columns]
+
+    # Handle missing values
+    imputer = SimpleImputer(strategy='mean')
+    X_imputed = imputer.fit_transform(X)
+
+    # Convert the imputed array back to DataFrame
+    X_imputed_df = pd.DataFrame(X_imputed, columns=model_columns)
+
+    # Encode categorical variables (if any)
+    X_encoded = pd.get_dummies(X_imputed_df, columns=X_imputed_df.select_dtypes(include=['object']).columns,
+                               drop_first=True)
+
+    # Ensure the same order of columns as in training
+    missing_cols = set(model_columns) - set(X_encoded.columns)
+    for col in missing_cols:
+        X_encoded[col] = 0
+    X_encoded = X_encoded[model_columns]
 
     # Polynomial Features
-    X_poly = poly.transform(input_df)
-    print("Polynomial features:", X_poly)
+    X_poly = poly.transform(X_encoded)
 
     # Scale the features
     X_scaled = scaler.transform(X_poly)
-    print("Scaled features:", X_scaled)
 
     return X_scaled
 
+
 def predict(data):
-    X = preprocess_input(data)
-    prediction = model.predict(X)
-    print("Prediction:", prediction)
-    return prediction[0]
+    # Preprocess input data
+    X_preprocessed = preprocess_input(data)
 
-
-file_path = '/Users/bhuvaneshvarnarayan/Documents/GitHub/referral_system/data/customer_conversion_training_dataset.csv'
-df = load_data(file_path)
-try:
-    X, y, scaler, poly, columns = preprocess_data(df)
-    train_model(X, y, scaler, poly, columns)
-except ValueError as e:
-    print(e)
+    # Predict using the best model
+    prediction = best_model.predict(X_preprocessed)
+    return int(prediction[0])
